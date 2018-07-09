@@ -2,7 +2,7 @@
 This program was created by the
 CodeWizardAVR V3.12 Advanced
 Automatic Program Generator
-© Copyright 1998-2014 Pavel Haiduc, HP InfoTech s.r.l.
+ï¿½ Copyright 1998-2014 Pavel Haiduc, HP InfoTech s.r.l.
 http://www.hpinfotech.com
 
 Project : 
@@ -22,16 +22,137 @@ Data Stack size         : 256
 *******************************************************/
 
 #include <mega16a.h>
+#include <delay.h>
 
 // Declare your global variables here
+unsigned char mode = 0; // 0: clock, 1:date, 2:set_clock, 3:set_date
+unsigned char sec = 0;
+unsigned char min = 0;
+unsigned char hour = 0;
+unsigned char day = 2;
+unsigned char month = 2;
+unsigned char year = 97;
 
+unsigned char sec_c;
+unsigned char min_c;
+unsigned char hour_c;
+unsigned char day_c;
+unsigned char month_c;
+unsigned char year_c;
+unsigned char set_mode_7seg_off = 0xff;
+
+int current_set = -1; // set mode
+flash char seg[] = {0xc0,0xf9,0xa4,0xb0,0x99,0x92,0x82,0xf8,0x80,0x90,0x02};
+unsigned char mode_timer = 0;
+unsigned char clock_changed = 0;
 // Timer1 output compare A interrupt service routine
 interrupt [TIM1_COMPA] void timer1_compa_isr(void)
 {
 // Place your code here
-    
+      sec++;
+      if(sec >= 60){
+            sec = 0;
+            min++;
+            if(min >= 60){
+                  min = 0;
+                  hour++;
+                  if(hour >= 24){
+                        hour = 0;
+                        day++;
+                        if(day >= 31){
+                              day = 1;
+                              month++;
+                              if(month >= 13){
+                                    month = 1;
+                                    year++;
+                              }
+                        }
+                  }
+            }
+      }
+      mode_timer++;
+      if(mode_timer >= 15){
+            mode_timer = 0;
+            switch(mode)	
+	            {	
+                        case 0:
+                        mode = 1;
+                        break;
+                        case 1:
+                        mode = 0;
+                        break;
+                        default:
+                        break;
+                  }
+      }
 }
 
+interrupt [EXT_INT0] void ext_int0_isr(void)//mode
+{
+// Place your code here
+      if(current_set < 0){
+            sec_c = sec;
+            min_c = min;
+            hour_c = hour;
+            day_c = day;
+            month_c = month;
+            year_c = year;
+      }
+      current_set++;
+      if(current_set < 3){
+            mode = 2;
+      }else{
+            mode = 3;
+      }
+      if(current_set >= 6){
+            mode = 0;
+            current_set = -1;
+            if(clock_changed == 1){
+                  sec = sec_c;
+                  min = min_c;
+                  hour = hour_c;
+                  day = day_c;
+                  month = month_c;
+                  year = year_c;
+            }
+            clock_changed = 0;
+      }
+}
+
+// External Interrupt 1 service routine
+interrupt [EXT_INT1] void ext_int1_isr(void)//set
+{
+// Place your code here
+clock_changed = 1;
+switch (current_set)
+{
+      case 0:
+            sec_c = (sec_c + 1)%60;
+            break;
+      case 1:
+            min_c = (min_c + 1)%60;
+            break;
+      case 2:
+            hour_c = (hour_c + 1)%60;
+            break;
+      case 3:
+            day_c = (day_c + 1)%31;
+            if(day_c == 0)
+                  day_c++;
+            break;
+      case 4:
+            month_c = (month_c + 1)%13;
+            if(month_c == 0)
+                  month_c++;
+            break;
+      case 5:
+            year_c = (year_c + 1)%99;
+            break;
+      default:
+            break;
+}
+}
+ 
 void main(void)
 {
 // Declare your local variables here
@@ -59,7 +180,7 @@ PORTC=(0<<PORTC7) | (0<<PORTC6) | (0<<PORTC5) | (0<<PORTC4) | (0<<PORTC3) | (0<<
 // Function: Bit7=In Bit6=In Bit5=In Bit4=In Bit3=In Bit2=In Bit1=In Bit0=In 
 DDRD=(0<<DDD7) | (0<<DDD6) | (0<<DDD5) | (0<<DDD4) | (0<<DDD3) | (0<<DDD2) | (0<<DDD1) | (0<<DDD0);
 // State: Bit7=T Bit6=T Bit5=T Bit4=T Bit3=T Bit2=T Bit1=T Bit0=T 
-PORTD=(0<<PORTD7) | (0<<PORTD6) | (0<<PORTD5) | (0<<PORTD4) | (0<<PORTD3) | (0<<PORTD2) | (0<<PORTD1) | (0<<PORTD0);
+PORTD=(0<<PORTD7) | (0<<PORTD6) | (0<<PORTD5) | (0<<PORTD4) | (1<<PORTD3) | (1<<PORTD2) | (0<<PORTD1) | (0<<PORTD0);
 
 // Timer/Counter 0 initialization
 // Clock source: System Clock
@@ -108,11 +229,15 @@ OCR2=0x00;
 TIMSK=(0<<OCIE2) | (0<<TOIE2) | (0<<TICIE1) | (1<<OCIE1A) | (0<<OCIE1B) | (0<<TOIE1) | (0<<OCIE0) | (0<<TOIE0);
 
 // External Interrupt(s) initialization
-// INT0: Off
-// INT1: Off
+// INT0: On
+// INT0 Mode: Rising Edge
+// INT1: On
+// INT1 Mode: Rising Edge
 // INT2: Off
-MCUCR=(0<<ISC11) | (0<<ISC10) | (0<<ISC01) | (0<<ISC00);
+GICR|=(1<<INT1) | (1<<INT0) | (0<<INT2);
+MCUCR=(1<<ISC11) | (1<<ISC10) | (1<<ISC01) | (1<<ISC00);
 MCUCSR=(0<<ISC2);
+GIFR=(1<<INTF1) | (1<<INTF0) | (0<<INTF2);
 
 // USART initialization
 // USART disabled
@@ -145,6 +270,94 @@ TWCR=(0<<TWEA) | (0<<TWSTA) | (0<<TWSTO) | (0<<TWEN) | (0<<TWIE);
 while (1)
       {
       // Place your code here
-
+      unsigned char first;
+      unsigned char second;
+      unsigned char third;
+            switch (mode)
+            {
+                  case 0:
+                        set_mode_7seg_off = 0xff;
+                        first = sec;
+                        second = min;
+                        third = hour;
+                        break;
+            
+                  case 1:
+                        set_mode_7seg_off = 0xff;
+                        first = day;
+                        second = month;
+                        third = year;
+                        break;
+                  case 2:
+                        
+                        switch (current_set)
+                        {
+                              case 0:
+                                    set_mode_7seg_off = 0x03;
+                                    first = sec_c;
+                                    second = 10;
+                                    third = 10;
+                                    break;
+                              case 1:
+                                    set_mode_7seg_off = 0x0C;
+                                    first = 10;
+                                    second = min_c;
+                                    third = 10;
+                                    break;
+                              case 2:
+                                    set_mode_7seg_off = 0x30;
+                                    first = 10;
+                                    second = 10;
+                                    third = hour_c;
+                                    break;
+                              default:
+                                    break;
+                        }
+                  case 3:
+                        
+                        switch (current_set)
+                        {
+                              case 3:
+                                    set_mode_7seg_off = 0x03;
+                                    first = day_c;
+                                    second = 10;
+                                    third = 10;
+                                    break;
+                              case 4:
+                                    set_mode_7seg_off = 0x0c;
+                                    first = 10;
+                                    second = month_c;
+                                    third = 10;
+                                    break;
+                              case 5:
+                                    set_mode_7seg_off = 0x30;
+                                    first = 10;
+                                    second = 10;
+                                    third = year_c;
+                                    break;
+                              default:
+                                    break;
+                        }
+                  default:
+                        break;
+            }
+            PORTA = seg[first%10];
+            PORTB = 0x01 & set_mode_7seg_off;
+            delay_ms(50);
+            PORTA = seg[first/10];
+            PORTB = 0x02 & set_mode_7seg_off;
+            delay_ms(50);
+            PORTA = seg[second%10];
+            PORTB = 0x04 & set_mode_7seg_off;
+            delay_ms(50);
+            PORTA = seg[second/10];
+            PORTB = 0x08 & set_mode_7seg_off;
+            delay_ms(50);
+            PORTA = seg[third%10];
+            PORTB = 0x10 & set_mode_7seg_off;
+            delay_ms(50);
+            PORTA = seg[third/10];
+            PORTB = 0x20 & set_mode_7seg_off;
+            delay_ms(50);
       }
 }
